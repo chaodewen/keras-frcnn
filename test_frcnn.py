@@ -155,9 +155,9 @@ for idx, img_name in enumerate(sorted(os.listdir(img_path))):
         continue
     print(img_name)
     st = time.time()
-    filepath = os.path.join(img_path, img_name)
+    file_path = os.path.join(img_path, img_name)
 
-    img = cv2.imread(filepath)
+    img = cv2.imread(file_path)
 
     X, ratio = format_img(img, C)
 
@@ -241,13 +241,13 @@ for idx, img_name in enumerate(sorted(os.listdir(img_path))):
             textOrg = (real_x1, real_y1 - 0)
 
             cv2.rectangle(img, (textOrg[0] - 5, textOrg[1] + baseLine - 5),
-                          (textOrg[0] + retval[0] + 5, textOrg[1] - retval[1] - 5), (0, 0, 0), 2)
+                          (textOrg[0] + retval[0] + 5, textOrg[1] - retval[1] - 5), (0, 255, 0), 2)
             cv2.rectangle(img, (textOrg[0] - 5, textOrg[1] + baseLine - 5),
-                          (textOrg[0] + retval[0] + 5, textOrg[1] - retval[1] - 5), (255, 255, 255), -1)
-            cv2.putText(img, textLabel, textOrg, cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
+                          (textOrg[0] + retval[0] + 5, textOrg[1] - retval[1] - 5), (0, 0, 255), -1)
+            cv2.putText(img, textLabel, textOrg, cv2.FONT_HERSHEY_DUPLEX, 1, (255, 0, 0), 1)
 
     print('Elapsed time = {}'.format(time.time() - st))
     print(all_dets)
-    cv2.imshow('img', img)
-    cv2.waitKey(0)
-# cv2.imwrite('./results_imgs/{}.png'.format(idx),img)
+    # cv2.imshow('img', img)
+    # cv2.waitKey(0)
+    cv2.imwrite('./test_results/{}_{}.png'.format(idx, img_name), img)
