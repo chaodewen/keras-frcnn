@@ -24,6 +24,7 @@ parser.add_option("--config_filename", dest="config_filename", help=
                   default="config.pickle")
 parser.add_option("--network", dest="network", help="Base network to use. Supports vgg or resnet50.",
                   default='resnet50')
+parser.add_option("-d", "--defect", dest="defect", help="Expectation defect of data set.", default="none")
 
 (options, args) = parser.parse_args()
 
@@ -150,10 +151,13 @@ bbox_threshold = 0.8
 
 visualise = True
 
+success_cnt = 0
+
 for idx, img_name in enumerate(sorted(os.listdir(img_path))):
     if not img_name.lower().endswith(('.bmp', '.jpeg', '.jpg', '.png', '.tif', '.tiff')):
         continue
-    print(img_name)
+
+    print(img_name),
     st = time.time()
     file_path = os.path.join(img_path, img_name)
 
@@ -221,6 +225,7 @@ for idx, img_name in enumerate(sorted(os.listdir(img_path))):
             probs[cls_name].append(np.max(P_cls[0, ii, :]))
 
     all_dets = []
+    isRight = True
 
     for key in bboxes:
         bbox = np.array(bboxes[key])
@@ -235,19 +240,32 @@ for idx, img_name in enumerate(sorted(os.listdir(img_path))):
                           (int(class_to_color[key][0]), int(class_to_color[key][1]), int(class_to_color[key][2])), 2)
 
             textLabel = '{}: {}'.format(key, int(100 * new_probs[jk]))
+
             all_dets.append((key, 100 * new_probs[jk]))
 
             (retval, baseLine) = cv2.getTextSize(textLabel, cv2.FONT_HERSHEY_COMPLEX, 1, 1)
             textOrg = (real_x1, real_y1 - 0)
 
+            # green
             cv2.rectangle(img, (textOrg[0] - 5, textOrg[1] + baseLine - 5),
                           (textOrg[0] + retval[0] + 5, textOrg[1] - retval[1] - 5), (0, 255, 0), 2)
+
+            # blue
             cv2.rectangle(img, (textOrg[0] - 5, textOrg[1] + baseLine - 5),
                           (textOrg[0] + retval[0] + 5, textOrg[1] - retval[1] - 5), (0, 0, 255), -1)
+
+            # red
             cv2.putText(img, textLabel, textOrg, cv2.FONT_HERSHEY_DUPLEX, 1, (255, 0, 0), 1)
 
+    if len(all_dets) != 0:
+        print(all_dets),
+
+        success_cnt += 1
+
+        # cv2.imshow('img', img)
+        # cv2.waitKey(0)
+        cv2.imwrite('./test_results/{}_{}.png'.format(options.defect, img_name), img)
+
+    print ""
+    print "Rate of having answer = " + str(success_cnt / float(idx + 1))
     print('Elapsed time = {}'.format(time.time() - st))
-    print(all_dets)
-    # cv2.imshow('img', img)
-    # cv2.waitKey(0)
-    cv2.imwrite('./test_results/{}_{}.png'.format(idx, img_name), img)
