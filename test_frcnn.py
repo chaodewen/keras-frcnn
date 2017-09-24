@@ -151,13 +151,14 @@ bbox_threshold = 0.8
 
 visualise = True
 
-success_cnt = 0
+exact_right_cnt = 0
+having_answer_cnt = 0
 
 for idx, img_name in enumerate(sorted(os.listdir(img_path))):
     if not img_name.lower().endswith(('.bmp', '.jpeg', '.jpg', '.png', '.tif', '.tiff')):
         continue
 
-    print(img_name),
+    print(str(idx) + ' ' + img_name),
     st = time.time()
     file_path = os.path.join(img_path, img_name)
 
@@ -241,6 +242,9 @@ for idx, img_name in enumerate(sorted(os.listdir(img_path))):
 
             textLabel = '{}: {}'.format(key, int(100 * new_probs[jk]))
 
+            if options.defect != 'none' and options.defect != key:
+                isRight = False
+
             all_dets.append((key, 100 * new_probs[jk]))
 
             (retval, baseLine) = cv2.getTextSize(textLabel, cv2.FONT_HERSHEY_COMPLEX, 1, 1)
@@ -260,12 +264,20 @@ for idx, img_name in enumerate(sorted(os.listdir(img_path))):
     if len(all_dets) != 0:
         print(all_dets),
 
-        success_cnt += 1
+        having_answer_cnt += 1
+
+        if isRight:
+            exact_right_cnt += 1
 
         # cv2.imshow('img', img)
         # cv2.waitKey(0)
         cv2.imwrite('./test_results/{}_{}.png'.format(options.defect, img_name), img)
 
-    print ""
-    print "Rate of having answer = " + str(success_cnt / float(idx + 1))
+    print ''
+    print 'Rate of having answer = ' + str(having_answer_cnt / float(idx + 1))
+    print 'Acc = ' + str(exact_right_cnt / float(idx + 1))
     print('Elapsed time = {}'.format(time.time() - st))
+
+print 'Total = ' + str(len(os.listdir(img_path)))
+print 'Having Answer Count = ' + str(having_answer_cnt)
+print 'Exact Right Count = ' + str(exact_right_cnt)
