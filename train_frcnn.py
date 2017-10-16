@@ -8,6 +8,7 @@ import time
 import numpy as np
 from optparse import OptionParser
 import pickle
+import traceback
 
 from keras import backend as K
 from keras.optimizers import Adam, SGD, RMSprop
@@ -304,7 +305,9 @@ for epoch_num in range(num_epochs):
                 break
 
         except Exception as e:
-            print('Exception: {}'.format(e))
-            continue
+            print('\nException: {}'.format(e))
+            traceback.print_exc()
+            # continue
+            exit()
 
 print('Training complete, exiting.')
