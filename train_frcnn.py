@@ -306,6 +306,7 @@ for epoch_num in range(num_epochs):
 
         except Exception as e:
             print('\nException: {}'.format(e))
+            traceback.print_exc()
             raise e
             # continue
 
