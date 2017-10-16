@@ -253,6 +253,7 @@ def classifier(base_layers, input_rois, num_rois, nb_classes=21, trainable=False
         pooling_regions = 7
         input_shape = (num_rois, 1024, 7, 7)
 
+    # - 可能是ROIPooling 融合ResNet结果（Feature Maps）和ROI输入（x, y, w, h）
     out_roi_pool = RoiPoolingConv(pooling_regions, num_rois)([base_layers, input_rois])
     out = classifier_layers(out_roi_pool, input_shape=input_shape, trainable=True)
 

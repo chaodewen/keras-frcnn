@@ -1,3 +1,5 @@
+# coding=utf-8
+
 from __future__ import division
 import random
 import pprint
@@ -23,7 +25,7 @@ parser = OptionParser()
 parser.add_option("-p", "--path", dest="train_path", help="Path to training data.")
 parser.add_option("-o", "--parser", dest="parser", help="Parser to use. One of simple or pascal_voc",
                   default="pascal_voc")
-# origin 32
+# origin 3
 parser.add_option("-n", "--num_rois", dest="num_rois", help="Number of RoIs to process at once.", default=32)
 parser.add_option("--network", dest="network", help="Base network to use. Supports vgg or resnet50.",
                   default='resnet50')
@@ -124,16 +126,21 @@ if K.image_dim_ordering() == 'th':
 else:
     input_shape_img = (None, None, 3)
 
-img_input = Input(shape=input_shape_img)
-roi_input = Input(shape=(None, 4))
+img_input = Input(shape=input_shape_img) # - 3通道图一张
+roi_input = Input(shape=(None, 4)) # - 可能是 x, y, w, h
 
 # define the base network (resnet here, can be VGG, Inception, etc)
+# - ResNet网络结构
 shared_layers = nn.nn_base(img_input, trainable=True)
 
 # define the RPN, built on the base layers
+# - 应该是3 * 3 = 9
 num_anchors = len(C.anchor_box_scales) * len(C.anchor_box_ratios)
+
+# - 生成[x_class, x_regr, base_layers]结构 应该是RPN的class和regr两个输出
 rpn = nn.rpn(shared_layers, num_anchors)
 
+# - 生成class和regr结构 可能是ROI Pooling后的结果
 classifier = nn.classifier(shared_layers, roi_input, C.num_rois, nb_classes=len(classes_count), trainable=True)
 
 model_rpn = Model(img_input, rpn[:2])
@@ -184,6 +191,7 @@ for epoch_num in range(num_epochs):
 
             if len(rpn_accuracy_rpn_monitor) == epoch_length and C.verbose:
                 mean_overlapping_bboxes = float(sum(rpn_accuracy_rpn_monitor)) / len(rpn_accuracy_rpn_monitor)
+                # overlapping bounding boxes 数目
                 rpn_accuracy_rpn_monitor = []
                 print('Average number of overlapping bounding boxes from RPN = {} for {} previous iterations'.format(
                     mean_overlapping_bboxes, epoch_length))
@@ -191,6 +199,7 @@ for epoch_num in range(num_epochs):
                     print(
                         'RPN is not producing bounding boxes that overlap the ground truth boxes. Check RPN settings or keep training.')
 
+            # - 内容为 X:np.copy(x_img), Y:[np.copy(y_rpn_cls), np.copy(y_rpn_regr)], img_data:img_data_aug
             X, Y, img_data = next(data_gen_train)
 
             loss_rpn = model_rpn.train_on_batch(X, Y)

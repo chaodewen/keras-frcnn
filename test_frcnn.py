@@ -1,3 +1,5 @@
+# coding=utf-8
+
 from __future__ import division
 import os
 import cv2
@@ -129,6 +131,7 @@ shared_layers = nn.nn_base(img_input, trainable=True)
 num_anchors = len(C.anchor_box_scales) * len(C.anchor_box_ratios)
 rpn_layers = nn.rpn(shared_layers, num_anchors)
 
+# nn is resnet
 classifier = nn.classifier(feature_map_input, roi_input, C.num_rois, nb_classes=len(class_mapping), trainable=True)
 
 model_rpn = Model(img_input, rpn_layers)
@@ -147,34 +150,43 @@ all_imgs = []
 
 classes = {}
 
+# origin is 0.8
 bbox_threshold = 0.8
 
 visualise = True
 
+total = 0
 exact_right_cnt = 0
+having_right_cnt = 0
 having_answer_cnt = 0
 
 for idx, img_name in enumerate(sorted(os.listdir(img_path))):
     if not img_name.lower().endswith(('.bmp', '.jpeg', '.jpg', '.png', '.tif', '.tiff')):
         continue
 
-    print(str(idx) + ' ' + img_name),
+    total += 1
+
+    print('Index ' + str(idx) + ' : ' + img_name),
     st = time.time()
     file_path = os.path.join(img_path, img_name)
 
     img = cv2.imread(file_path)
 
+    # img:(1200, 1600, 3) -> X:(600, 800, 3), ratio:0.5
     X, ratio = format_img(img, C)
 
     if K.image_dim_ordering() == 'tf':
         X = np.transpose(X, (0, 2, 3, 1))
 
     # get the feature maps and output from the RPN
+    # Y1(rpn_layer):(1, 38, 50, 9), Y2(regr_layer):(1, 38, 50, 36), F(1, 38, 50, 1024)
+    # F可能是Feature Maps
     [Y1, Y2, F] = model_rpn.predict(X)
 
-    R = roi_helpers.rpn_to_roi(Y1, Y2, C, K.image_dim_ordering(), overlap_thresh=0.7)
+    # R:(300, 4) 根据Y1得到一个概率留下前300个框
+    R = roi_helpers.rpn_to_roi(Y1, Y2, C, K.image_dim_ordering(), overlap_thresh=0.7, file_path=file_path)
 
-    # convert from (x1,y1,x2,y2) to (x,y,w,h)
+    # convert from (x1, y1, x2, y2) to (x, y, w, h)
     R[:, 2] -= R[:, 0]
     R[:, 3] -= R[:, 1]
 
@@ -183,6 +195,7 @@ for idx, img_name in enumerate(sorted(os.listdir(img_path))):
     probs = {}
 
     for jk in range(R.shape[0] // C.num_rois + 1):
+        # - ROIs:(1, 32, 4) 含义是分R为300 / 32 + 1 = 10组 每组32个ROI进行处理
         ROIs = np.expand_dims(R[C.num_rois * jk:C.num_rois * (jk + 1), :], axis=0)
         if ROIs.shape[1] == 0:
             break
@@ -196,9 +209,29 @@ for idx, img_name in enumerate(sorted(os.listdir(img_path))):
             ROIs_padded[0, curr_shape[1]:, :] = ROIs[0, 0, :]
             ROIs = ROIs_padded
 
+        # - P_cls:(1,32,5) P_regr:(1,32,16)
         [P_cls, P_regr] = model_classifier_only.predict([F, ROIs])
 
         for ii in range(P_cls.shape[1]):
+
+            # - !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! test ROI
+            # cur_img = cv2.imread(file_path)
+            # (x_test, y_test, w_test, h_test) = ROIs[0, ii, :]
+            # x1_test = x_test * C.rpn_stride
+            # y1_test = y_test * C.rpn_stride
+            # x2_test = (x_test + w_test) * C.rpn_stride
+            # y2_test = (y_test + h_test) * C.rpn_stride
+            # (real_x1_test, real_y1_test, real_x2_test, real_y2_test) = get_real_coordinates(ratio, x1_test, y1_test,
+            #                                                                                 x2_test, y2_test)
+            # cv2.rectangle(cur_img, (real_x1_test, real_y1_test), (real_x2_test, real_y2_test), (255, 0, 0), 4)
+            # textLabel = '{} - {} - {} - {} - {}'.format(int(100 * P_cls[0, ii, 0]), int(100 * P_cls[0, ii, 1]), int(100 * P_cls[0, ii, 2]), int(100 * P_cls[0, ii, 3]), int(100 * P_cls[0, ii, 4]))
+            # cv2.putText(cur_img, textLabel, (real_x1_test, real_y1_test + 20), cv2.FONT_HERSHEY_DUPLEX, 0.5, (0, 0, 255), 1)
+            # if int(P_cls[0, ii, 0] * 100) > 0 or int(P_cls[0, ii, 1] * 100) > 0 or int(P_cls[0, ii, 2] * 100) > 0 or int(P_cls[0, ii, 3] * 100) > 0:
+            #     cv2.imwrite('./test_results/R_{}_{}_sp.jpg'.format(jk, ii), cur_img)
+            #     print 'R_{}_{}_sp.jpg'.format(jk, ii)
+            # else:
+            #     cv2.imwrite('./test_results/R_{}_{}.jpg'.format(jk, ii), cur_img)
+            # continue
 
             if np.max(P_cls[0, ii, :]) < bbox_threshold or np.argmax(P_cls[0, ii, :]) == (P_cls.shape[2] - 1):
                 continue
@@ -225,8 +258,12 @@ for idx, img_name in enumerate(sorted(os.listdir(img_path))):
                 [C.rpn_stride * x, C.rpn_stride * y, C.rpn_stride * (x + w), C.rpn_stride * (y + h)])
             probs[cls_name].append(np.max(P_cls[0, ii, :]))
 
+    # - !!!!!!!!!!!!!!测试用
+    # break
+
     all_dets = []
     isRight = True
+    hasRightAnswer = False
 
     for key in bboxes:
         bbox = np.array(bboxes[key])
@@ -235,6 +272,7 @@ for idx, img_name in enumerate(sorted(os.listdir(img_path))):
         for jk in range(new_boxes.shape[0]):
             (x1, y1, x2, y2) = new_boxes[jk, :]
 
+            # 0.5的映射关系
             (real_x1, real_y1, real_x2, real_y2) = get_real_coordinates(ratio, x1, y1, x2, y2)
 
             cv2.rectangle(img, (real_x1, real_y1), (real_x2, real_y2),
@@ -245,6 +283,9 @@ for idx, img_name in enumerate(sorted(os.listdir(img_path))):
             if options.defect != 'none' and options.defect != key:
                 isRight = False
 
+            if options.defect != 'none' and options.defect == key:
+                hasRightAnswer = True
+
             all_dets.append((key, 100 * new_probs[jk]))
 
             (retval, baseLine) = cv2.getTextSize(textLabel, cv2.FONT_HERSHEY_COMPLEX, 1, 1)
@@ -254,11 +295,11 @@ for idx, img_name in enumerate(sorted(os.listdir(img_path))):
             cv2.rectangle(img, (textOrg[0] - 5, textOrg[1] + baseLine - 5),
                           (textOrg[0] + retval[0] + 5, textOrg[1] - retval[1] - 5), (0, 255, 0), 2)
 
-            # blue
+            # red
             cv2.rectangle(img, (textOrg[0] - 5, textOrg[1] + baseLine - 5),
                           (textOrg[0] + retval[0] + 5, textOrg[1] - retval[1] - 5), (0, 0, 255), -1)
 
-            # red
+            # blue
             cv2.putText(img, textLabel, textOrg, cv2.FONT_HERSHEY_DUPLEX, 1, (255, 0, 0), 1)
 
     if len(all_dets) != 0:
@@ -269,15 +310,22 @@ for idx, img_name in enumerate(sorted(os.listdir(img_path))):
         if isRight:
             exact_right_cnt += 1
 
+        if hasRightAnswer:
+            having_right_cnt += 1
+
         # cv2.imshow('img', img)
         # cv2.waitKey(0)
-        cv2.imwrite('./test_results/{}_{}.png'.format(options.defect, img_name), img)
+        # removed png
+        cv2.imwrite('./test_results/{}_{}'.format(options.defect, img_name), img)
 
     print ''
-    print 'Rate of having answer = ' + str(having_answer_cnt / float(idx + 1))
-    print 'Acc = ' + str(exact_right_cnt / float(idx + 1))
+    print 'Rate of having answer = ' + str(having_answer_cnt / float(total))
+    print 'Rate of having right answer = ' + str(having_right_cnt / float(total))
+    print 'Acc = ' + str(exact_right_cnt / float(total))
     print('Elapsed time = {}'.format(time.time() - st))
 
-print 'Total = ' + str(len(os.listdir(img_path)))
+print ''
+print 'Total = ' + str(total)
 print 'Having Answer Count = ' + str(having_answer_cnt)
+print 'Having Right Answer Count = ' + str(having_right_cnt)
 print 'Exact Right Count = ' + str(exact_right_cnt)

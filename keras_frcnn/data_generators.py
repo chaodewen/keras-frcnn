@@ -1,3 +1,6 @@
+# coding=utf-8
+
+
 from __future__ import absolute_import
 import numpy as np
 import cv2
@@ -38,6 +41,7 @@ def iou(a, b):
     return float(area_i) / float(area_u + 1e-6)
 
 
+# - 把小的边变为600 整幅图按比例缩放
 def get_new_img_size(width, height, img_min_side=600):
     if width <= height:
         f = float(img_min_side) / width
@@ -78,13 +82,13 @@ class SampleSelector:
 
 
 def calc_rpn(C, img_data, width, height, resized_width, resized_height, img_length_calc_function):
-    downscale = float(C.rpn_stride)
+    downscale = float(C.rpn_stride) # - 步长为16 这里目测用于缩放
     anchor_sizes = C.anchor_box_scales
     anchor_ratios = C.anchor_box_ratios
     num_anchors = len(anchor_sizes) * len(anchor_ratios)
 
     # calculate the output map size based on the network architecture
-
+    # - 应该是在计算经过网络后输出的图片尺寸 根据VGG和ResNet会有不同
     (output_width, output_height) = img_length_calc_function(resized_width, resized_height)
 
     n_anchratios = len(anchor_ratios)
@@ -103,6 +107,7 @@ def calc_rpn(C, img_data, width, height, resized_width, resized_height, img_leng
     best_dx_for_bbox = np.zeros((num_bboxes, 4)).astype(np.float32)
 
     # get the GT box coordinates, and resize to account for image resizing
+    # - 这里bbox中的x1,x2,y1,y2分别通过缩放匹配到resize以后的图像 记做gta 尺寸为(num_of_bbox,4)
     gta = np.zeros((num_bboxes, 4))
     for bbox_num, bbox in enumerate(img_data['bboxes']):
         # get the GT box coordinates, and resize to account for image resizing
@@ -112,7 +117,7 @@ def calc_rpn(C, img_data, width, height, resized_width, resized_height, img_leng
         gta[bbox_num, 3] = bbox['y2'] * (resized_height / float(height))
 
     # rpn ground truth
-
+    # - 把特征图（输出图片）的每一个点作为锚点 左右移动anchor_x/2或anchor_y/2制作矩形选框
     for anchor_size_idx in range(len(anchor_sizes)):
         for anchor_ratio_idx in range(n_anchratios):
             anchor_x = anchor_sizes[anchor_size_idx] * anchor_ratios[anchor_ratio_idx][0]
@@ -137,6 +142,7 @@ def calc_rpn(C, img_data, width, height, resized_width, resized_height, img_leng
                     if y1_anc < 0 or y2_anc > resized_height:
                         continue
 
+                    # - 这里已经得到了本次的选框 下面进行计算
                     # bbox_type indicates whether an anchor should be a target
                     bbox_type = 'neg'
 
@@ -147,9 +153,12 @@ def calc_rpn(C, img_data, width, height, resized_width, resized_height, img_leng
                     for bbox_num in range(num_bboxes):
 
                         # get IOU of the current GT box and the current anchor box
+                        # - 计算box和anchor的交集IOU
                         curr_iou = iou([gta[bbox_num, 0], gta[bbox_num, 2], gta[bbox_num, 1], gta[bbox_num, 3]],
                                        [x1_anc, y1_anc, x2_anc, y2_anc])
                         # calculate the regression targets if they will be needed
+                        # - IOU大于best_iou_for_bbox或者设置的阈值0.7
+                        # - 进入后计算gta和anchor的中心点坐标 然后算出x,y,w,h四个梯度值
                         if curr_iou > best_iou_for_bbox[bbox_num] or curr_iou > C.rpn_max_overlap:
                             cx = (gta[bbox_num, 0] + gta[bbox_num, 1]) / 2.0
                             cy = (gta[bbox_num, 2] + gta[bbox_num, 3]) / 2.0
@@ -161,6 +170,7 @@ def calc_rpn(C, img_data, width, height, resized_width, resized_height, img_leng
                             tw = np.log((gta[bbox_num, 1] - gta[bbox_num, 0]) / (x2_anc - x1_anc))
                             th = np.log((gta[bbox_num, 3] - gta[bbox_num, 2]) / (y2_anc - y1_anc))
 
+                        # - 根据anchor的表现对其进行标注
                         if img_data['bboxes'][bbox_num]['class'] != 'bg':
 
                             # all GT boxes should be mapped to an anchor box, so we keep track of which anchor box was best
@@ -244,6 +254,8 @@ def calc_rpn(C, img_data, width, height, resized_width, resized_height, img_leng
         val_locs = random.sample(range(len(neg_locs[0])), len(neg_locs[0]) - num_pos)
         y_is_box_valid[0, neg_locs[0][val_locs], neg_locs[1][val_locs], neg_locs[2][val_locs]] = 0
 
+    # - 得到了返回值y_rpn_cls,y_rpn_regr
+    # - 分别用于确定anchor是否包含物体和回归梯度
     y_rpn_cls = np.concatenate([y_is_box_valid, y_rpn_overlap], axis=1)
     y_rpn_regr = np.concatenate([np.repeat(y_rpn_overlap, 4, axis=1), y_rpn_regr], axis=1)
 
@@ -295,6 +307,7 @@ def get_anchor_gt(all_img_data, class_count, C, img_length_calc_function, backen
 
                 # read in image, and optionally add augmentation
 
+                # - 未改变形状 img_data_aug是数据集内容 x_img是cv2打开的图片
                 if mode == 'train':
                     img_data_aug, x_img = data_augment.augment(img_data, C, augment=True)
                 else:
@@ -307,12 +320,14 @@ def get_anchor_gt(all_img_data, class_count, C, img_length_calc_function, backen
                 assert rows == height
 
                 # get image dimensions for resizing
+                # - 按照最小边为600得到缩放后尺寸
                 (resized_width, resized_height) = get_new_img_size(width, height, C.im_size)
 
                 # resize the image so that smalles side is length = 600px
                 x_img = cv2.resize(x_img, (resized_width, resized_height), interpolation=cv2.INTER_CUBIC)
 
                 try:
+                    # - y_rpn_cls:(1,18,38,67) y_rpn_regr:(1,72,38,67)
                     y_rpn_cls, y_rpn_regr = calc_rpn(C, img_data_aug, width, height, resized_width, resized_height,
                                                      img_length_calc_function)
                 except:

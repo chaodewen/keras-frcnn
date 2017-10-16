@@ -1,9 +1,12 @@
+# coding=utf-8
+
 import numpy as np
 import pdb
 import math
 from . import data_generators
 import copy
 import time
+import cv2
 
 
 def calc_iou(R, img_data, C, class_mapping):
@@ -224,7 +227,8 @@ def non_max_suppression_fast(boxes, probs, overlap_thresh=0.9, max_boxes=300):
     return boxes, probs
 
 
-def rpn_to_roi(rpn_layer, regr_layer, C, dim_ordering, use_regr=True, max_boxes=300, overlap_thresh=0.9):
+# - !!!!!!!!!!!!!!!!!!! 增加file_path参数
+def rpn_to_roi(rpn_layer, regr_layer, C, dim_ordering, use_regr=True, max_boxes=300, overlap_thresh=0.9, file_path = None):
     regr_layer = regr_layer / C.std_scaling
 
     anchor_sizes = C.anchor_box_scales
@@ -239,6 +243,7 @@ def rpn_to_roi(rpn_layer, regr_layer, C, dim_ordering, use_regr=True, max_boxes=
         (rows, cols) = rpn_layer.shape[1:3]
 
     curr_layer = 0
+    # A存储框坐标
     if dim_ordering == 'tf':
         A = np.zeros((4, rpn_layer.shape[1], rpn_layer.shape[2], rpn_layer.shape[3]))
     elif dim_ordering == 'th':
@@ -247,7 +252,7 @@ def rpn_to_roi(rpn_layer, regr_layer, C, dim_ordering, use_regr=True, max_boxes=
     for anchor_size in anchor_sizes:
         for anchor_ratio in anchor_ratios:
 
-            anchor_x = (anchor_size * anchor_ratio[0]) / C.rpn_stride
+            anchor_x = (anchor_size * anchor_ratio[0]) / C.rpn_stride # - !!!!!!!!!!!! 缩小16倍
             anchor_y = (anchor_size * anchor_ratio[1]) / C.rpn_stride
             if dim_ordering == 'th':
                 regr = regr_layer[0, 4 * curr_layer:4 * curr_layer + 4, :, :]
@@ -278,7 +283,23 @@ def rpn_to_roi(rpn_layer, regr_layer, C, dim_ordering, use_regr=True, max_boxes=
             curr_layer += 1
 
     all_boxes = np.reshape(A.transpose((0, 3, 1, 2)), (4, -1)).transpose((1, 0))
-    all_probs = rpn_layer.transpose((0, 3, 1, 2)).reshape((-1))
+    all_probs = rpn_layer.transpose((0, 3, 1, 2)).reshape((-1)) # 每个框只有一个概率值
+
+    # - !!!!!!!!!!!!!!!!!!! 打印观察用图片
+    # all_boxes, all_probs = bubble_sort(all_boxes, all_probs)
+    # img = cv2.imread(file_path)
+    # max_boxes = 17100
+    # for i in range(10):
+    #     x1 = int(all_boxes[i][0]) * 2 * C.rpn_stride
+    #     y1 = int(all_boxes[i][1]) * 2 * C.rpn_stride
+    #     x2 = int(all_boxes[i][2]) * 2 * C.rpn_stride
+    #     y2 = int(all_boxes[i][3]) * 2 * C.rpn_stride
+    #     p = all_probs[i]
+    #
+    #     cv2.rectangle(img, (x1, y1), (x2, y2), (0, 0, 255), 2)
+    #     textLabel = '{}*{} : {}'.format(x2 - x1, y2 - y1, int(100 * p))
+    #     cv2.putText(img, textLabel, (x1, y1 + 20), cv2.FONT_HERSHEY_DUPLEX, 0.5, (0, 0, 255), 1)
+    # cv2.imwrite('./test_results/prob_test_most.jpg', img)
 
     x1 = all_boxes[:, 0]
     y1 = all_boxes[:, 1]
@@ -293,3 +314,14 @@ def rpn_to_roi(rpn_layer, regr_layer, C, dim_ordering, use_regr=True, max_boxes=
     result = non_max_suppression_fast(all_boxes, all_probs, overlap_thresh=overlap_thresh, max_boxes=max_boxes)[0]
 
     return result
+
+
+# 冒泡排序
+def bubble_sort(all_boxes, all_probs):
+    len = all_probs.shape[0]
+    for i in range(0, len):
+        for j in range(i + 1, len):
+            if all_probs[i] < all_probs[j]:
+                all_probs[i], all_probs[j] = all_probs[j], all_probs[i]
+                all_boxes[i], all_boxes[j] = all_boxes[j], all_boxes[i]
+    return all_boxes, all_probs
